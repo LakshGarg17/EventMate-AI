@@ -48,6 +48,10 @@ dist-ssr/
 *.db
 *.sqlite
 *.sqlite3
+eventmate.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Logs
 logs/

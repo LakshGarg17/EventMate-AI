@@ -1,136 +1,161 @@
 # EventMate AI - GenAI Celebration & Event Planner
 
-EventMate AI is an autonomous, full-stack generative AI celebration and event planning system. Given high-level celebration details (such as event type, date, location, guest count, budget, and aesthetic preferences), EventMate AI synthesizes a comprehensive execution blueprint: mathematically reconciled budgets, milestone schedules with automated overdue detection, curated aesthetic color palettes, culinary suggestions, vendor requirements, and actionable risk mitigation playbooks.
+EventMate AI is a production-grade, full-stack generative AI celebration and event planning system. Built with React 19, Vite, Tailwind CSS, Lucide icons, Recharts, FastAPI, SQLAlchemy 2.x, Pydantic v2, and the official Google GenAI SDK (`google-genai`).
+
+EventMate AI synthesizes comprehensive execution blueprints (mathematically reconciled budgets, milestone schedules, creative palettes, culinary directives, vendor load-ins, and risk playbooks) and provides persistent event management, expense tracking, and deadline workflows.
 
 ---
 
-## Key Features Completed (Day 1)
+## What's New in Day 2: Persistent Event Management, Budget & Timeline
 
-1. **Intelligent Event Blueprint Form**:
-   - Comprehensive parameters: Event Name, Category (Wedding, Birthday, Community Event), Event Date (strictly future-validated), Location, Guest Count, Budget, Currency, Aesthetic Theme, and Special Preferences.
-   - Quick one-click sample presets for instant demonstration (Wedding, Birthday, Community Event).
-   - Real-time client-side validation mirroring Pydantic v2 backend constraints with inline error alerts, ARIA attributes, and double-submit prevention.
-
-2. **Official Google GenAI SDK Integration**:
-   - Powered by the official `google-genai` SDK (`from google import genai`) with structured output enforcement (`response_mime_type="application/json"` and `response_schema`).
-   - Defaults to `gemini-2.5-flash` with dynamic model availability verification.
-   - Defensive JSON code fence stripping, single-retry schema repair on malformed responses, asynchronous thread delegation (`asyncio.to_thread`), and unified HTTP status mapping (422, 429, 502, 504, 500).
-
-3. **Deterministic Demo Mode (Zero Key Required)**:
-   - When `GEMINI_API_KEY` is omitted or empty, the backend transparently activates a rich, deterministic celebration planning engine (`source: "demo"`).
-   - Generates realistic, event-tailored data with a prominent `"Demo Mode"` badge and warning.
-   - Secrets are never leaked or committed.
-
-4. **Guaranteed Budget Reconciliation (Hare-Niemeyer Algorithm)**:
-   - Never trusts raw LLM arithmetic.
-   - Computes allocations in integer units and distributes rounding remainders via the **Largest-Remainder Method**.
-   - **Mathematical Invariant**: `sum(items.amount) == total_budget` is guaranteed to 100.00% exact equality for all numbers (even prime or awkward totals like `1`, `7`, `100,001`).
-   - Enforces required categories (*Venue, Catering, Decoration, Entertainment, Photography, Miscellaneous*) plus an automatic *Contingency Reserve* fund (target 5–10%).
-
-5. **Chronological Milestone Timeline & Overdue Safeguards**:
-   - Calculates milestone due dates from `days_before` integers relative to server clock `date.today()`.
-   - Automatically detects tasks with computed due dates in the past, marks them `is_overdue=true` and `is_unrealistic=true`, compresses them to today, and generates urgent warning alerts.
-   - Flags events scheduled within a short preparation window (< 7 days).
-   - Sorts all execution tasks chronologically by due date and priority (*High*, *Medium*, *Low*).
-
-6. **Responsive SaaS Dashboard**:
-   - Designed with modern typography (Inter), glassmorphism, and a cohesive slate/indigo theme.
-   - **Executive Overview**: 5 metric summary cards (Budget, Attendance, Countdown, Venue, Theme).
-   - **Financial Allocation**: Recharts interactive PieChart with custom tooltip, accessible legend, and an exact tabular breakdown.
-   - **Action Checklist**: Interactive checkboxes with dynamic progress percentage calculation.
-   - **Creative Directives**: Click-to-copy hex color palette swatches, decorative scenography, and catering/entertainment guides.
-   - **Logistics & Risk Analysis**: Vendor load-in specifications and vulnerability mitigation cards.
-   - **Working Sidebar**: Deep-link scrolling to each dashboard section on desktop and mobile.
-
-7. **SQLite-Ready Architecture for Day 2**:
-   - All response models include unique UUID `id` fields.
-   - Clean separation of concerns between API routes (`app/api/routes.py`), schema definitions (`app/schemas.py`), and domain services (`app/services/`). No persistence today, completely prepared for Day 2 SQLite integration.
+Day 2 transforms the ephemeral AI event planner into a persistent event manager:
+1. **Persistent SQLite Engine (SQLAlchemy 2.x)**:
+   - Robust relational storage in `backend/eventmate.db` with absolute-path resolution.
+   - Enforced foreign key integrity via engine connection listener (`PRAGMA foreign_keys=ON`).
+   - Declarative models (`Mapped`, `mapped_column`, `select()`, `selectinload`) with UUID4 primary keys and UTC timestamps.
+   - Cascading deletions (`cascade="all, delete-orphan", passive_deletes=True`): deleting an event cleanly purges all its budget categories, expenses, and tasks.
+   - Non-destructive, idempotent table initialization on startup (`Base.metadata.create_all`).
+2. **Exact Minor-Unit Currency System**:
+   - Zero-floating-point financial calculations using Python `Decimal` and integer minor units (cents, paise, yen).
+   - Currency exponent table (`JPY=0`, `USD/EUR/GBP/INR=2`).
+   - Strict input validation rejecting negative values, excessive decimal places, and out-of-range figures with HTTP 422.
+3. **Deterministic Summaries Module (`summary.py`)**:
+   - Single source of truth for budget and task analytics.
+   - Budget analytics: total budget, estimated total, actual spend, remaining funds, utilization percentage, over-budget detection, unallocated buffer, category breakdown (with an uncategorized bucket), and pending payments tracker.
+   - Task analytics: total, pending, in-progress, completed, overdue, upcoming (within 7 days), and progress percentage.
+   - Timezone-safe and test-injectable `get_today()` helper.
+4. **Comprehensive REST API**:
+   - Full CRUD for Events, Budget Categories, Expenses, and Tasks.
+   - Atomic plan-saving endpoint (`POST /api/events`) executing event creation, category mapping with Hare-Niemeyer reconciliation, and timeline task conversion in a single database transaction.
+   - CORS middleware updated to explicitly support `GET`, `POST`, `PUT`, `DELETE`, and `OPTIONS`.
+5. **Modern React SPA with `react-router-dom`**:
+   - `/`: Dashboard showing saved events, KPI overview, search/filter, budget utilization bars, task progress bars, and next deadline indicators.
+   - `/events/new`: Event creation blueprint form, AI generation, and double-click protected "Save Event to Database" action.
+   - `/events/:id`: Multi-tab event manager (Overview with inline editing, Budget & Expenses with Recharts breakdown and modal CRUD, Timeline & Tasks with status filtering and quick completion toggle, AI Master Plan).
+   - Accessible `ConfirmDialog` modal (`role="alertdialog"`, Escape key dismissal, focus management) for all destructive actions.
+   - `vercel.json` SPA rewrite configuration for seamless client-side routing.
 
 ---
 
-## Architecture Overview
+## Database Architecture (SQLAlchemy 2.x)
 
-```
-EventMate AI/
-├── backend/
-│   ├── app/
-│   │   ├── __init__.py          # sys.path resolution helper
-│   │   ├── config.py            # Pydantic BaseSettings (.env loader)
-│   │   ├── schemas.py           # Pydantic v2 Request, Response & AI schemas
-│   │   ├── main.py              # FastAPI app, CORS, custom exception handlers
-│   │   ├── api/
-│   │   │   ├── __init__.py
-│   │   │   └── routes.py        # /health and /api/events/generate routes
-│   │   └── services/
-│   │       ├── __init__.py
-│   │       ├── ai_service.py    # Google GenAI SDK structured output & retry
-│   │       ├── budget.py        # Largest-Remainder budget reconciliation
-│   │       ├── timeline.py      # Timeline calculation & overdue validator
-│   │       └── demo.py          # Deterministic demo engine
-│   ├── tests/
-│   │   ├── __init__.py
-│   │   ├── test_health.py       # Health checks and key leakage guard
-│   │   ├── test_schemas.py      # Pydantic v2 validation rules
-│   │   ├── test_budget.py       # Exact sum math and edge case tests
-│   │   ├── test_timeline.py     # Date calculation and overdue checks
-│   │   ├── test_demo.py         # Demo plan generation and warnings
-│   │   ├── test_ai_service.py   # Mocked Gemini API errors, timeouts, repair
-│   │   └── test_api_integration.py # Live client integration and CORS preflight
-│   ├── requirements.txt         # Pinned backend dependencies
-│   ├── .env.example             # Template for backend settings
-│   └── .env                     # Local configuration
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Navbar.jsx       # Header with live health pill
-│   │   │   ├── Sidebar.jsx      # Functional navigation links & drawer
-│   │   │   ├── EventForm.jsx    # Accessible validated input form
-│   │   │   ├── PlanOverview.jsx # Metrics cards & warnings banner
-│   │   │   ├── BudgetSection.jsx# Recharts PieChart & tabular fallback
-│   │   │   ├── TimelineSection.jsx # Chronological tasks & interactive checklist
-│   │   │   ├── CreativeSection.jsx # Theme swatches & sensory directives
-│   │   │   ├── LogisticsAndRisks.jsx # Vendors & mitigation playbook
-│   │   │   ├── LoadingSkeleton.jsx # Pulsing loading progression
-│   │   │   ├── ErrorBanner.jsx  # Dismissible error card with retry
-│   │   │   └── EmptyState.jsx   # Guided starter screen
-│   │   ├── services/
-│   │   │   └── api.js           # Fetch wrapper with AbortController timeout
-│   │   ├── utils/
-│   │   │   └── formatters.js    # Intl.NumberFormat & date utilities
-│   │   ├── App.jsx              # Application state coordinator
-│   │   ├── main.jsx             # React 19 entrypoint
-│   │   └── index.css            # Tailwind v4 import & design tokens
-│   ├── package.json             # Frontend dependencies & scripts
-│   ├── vite.config.js           # Vite 8 + @tailwindcss/vite configuration
-│   ├── .env.example             # Template for frontend settings
-│   └── .env                     # Local frontend configuration
-├── .gitignore                   # Excludes env, venvs, caches, db, dist
-└── README.md                    # Documentation & verification report
+### Database Location & Connection
+- **Default Database File**: `backend/eventmate.db` (auto-created on startup with tables if not present).
+- **Environment Variable**: `DATABASE_URL` in `backend/.env` (defaults to `sqlite:///<absolute_path_to_backend>/eventmate.db`).
+- **Resetting the Database**: Simply stop the backend and delete `backend/eventmate.db` (and any `*.db-journal`, `*.db-wal`, `*.db-shm` files). Restarting the backend automatically reinitializes a clean database.
+- **Schema Migration Notice**: Tables are initialized using `Base.metadata.create_all(bind=engine)`, which is idempotent and non-destructive. If you introduce future schema alterations (such as altering column types or constraints), use a manual SQLite migration script or integrate Alembic.
+
+### Entity Relational Schema
+
+```mermaid
+erDiagram
+    EVENT ||--o{ BUDGET_CATEGORY : "has many (CASCADE)"
+    EVENT ||--o{ EXPENSE : "has many (CASCADE)"
+    EVENT ||--o{ TASK : "has many (CASCADE)"
+    BUDGET_CATEGORY ||--o{ EXPENSE : "categorizes (SET NULL)"
+
+    EVENT {
+        string id PK "UUID4"
+        string name "1-120 chars"
+        string event_type "Wedding | Birthday | Community Event"
+        date event_date "Date"
+        string location "1-200 chars"
+        integer guest_count ">= 1"
+        integer total_budget "Minor units (cents)"
+        string currency "3-letter ISO (USD, INR, EUR, JPY)"
+        string preferred_theme "Nullable"
+        string additional_preferences "Nullable"
+        json generated_plan "Nullable (stored Day 1 AI JSON)"
+        datetime created_at "UTC"
+        datetime updated_at "UTC"
+    }
+
+    BUDGET_CATEGORY {
+        string id PK "UUID4"
+        string event_id FK "events.id ON DELETE CASCADE"
+        string category_name "Unique per event"
+        integer estimated_amount "Minor units"
+        string description "Nullable"
+    }
+
+    EXPENSE {
+        string id PK "UUID4"
+        string event_id FK "events.id ON DELETE CASCADE"
+        string budget_category_id FK "budget_categories.id ON DELETE SET NULL"
+        string description "1-200 chars"
+        integer estimated_amount "Minor units (>= 0)"
+        integer actual_amount "Minor units (nullable, >= 0)"
+        string payment_status "Pending | Partial | Paid"
+        date expense_date "Nullable Date"
+        string notes "Nullable"
+        datetime created_at "UTC"
+    }
+
+    TASK {
+        string id PK "UUID4"
+        string event_id FK "events.id ON DELETE CASCADE"
+        string title "1-120 chars"
+        string description "Nullable"
+        string category "1-50 chars"
+        string priority "High | Medium | Low"
+        date due_date "Date"
+        string status "Pending | In Progress | Completed"
+        datetime created_at "UTC"
+        datetime updated_at "UTC"
+    }
 ```
 
 ---
 
-## Environment Variables
+## API Reference
 
-### Backend (`backend/.env`)
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `GEMINI_API_KEY` | Google Gemini API key. If omitted or blank, runs in Demo Mode. | *(empty)* |
-| `GEMINI_MODEL` | Gemini model name. | `gemini-2.5-flash` |
-| `ALLOWED_ORIGINS`| Comma-separated list of allowed CORS origins. | `http://localhost:5173,http://127.0.0.1:5173` |
-| `HOST` | Backend host address. | `127.0.0.1` |
-| `PORT` | Backend port number. | `8000` |
+### 1. Health & AI Blueprint Generation (Day 1)
+| Method | Endpoint | Status | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/health` | `200` | Service health status, environment mode, and database connection. |
+| `POST` | `/api/events/generate` | `200` | Synthesize reconciled budget, timeline milestones, and creative directives via Gemini or Demo Engine. |
 
-### Frontend (`frontend/.env`)
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `VITE_API_BASE_URL` | Backend URL for API calls. | `http://localhost:8000` |
+### 2. Events API (Day 2)
+| Method | Endpoint | Status | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/events` | `201` | Create and save an event. If `generated_plan` is supplied, atomically creates budget categories (reconciled) and tasks. |
+| `GET` | `/api/events` | `200` | List summary of all saved events (newest first) with budget utilization %, task progress %, and next deadline. |
+| `GET` | `/api/events/{id}` | `200` | Get full event details including categories, expenses, tasks, `generated_plan`, `budget_summary`, and `task_summary`. |
+| `PUT` | `/api/events/{id}` | `200` | Update editable event fields (`name`, `event_date`, `guest_count`, `total_budget`, etc.). Rejects currency changes if expenses exist. |
+| `DELETE`| `/api/events/{id}` | `204` | Delete event and cascade delete all related categories, expenses, and tasks. |
+
+### 3. Expenses API (Day 2)
+| Method | Endpoint | Status | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/events/{id}/expenses` | `201` | Log a new expense for an event. Verifies `budget_category_id` belongs to the same event. |
+| `GET` | `/api/events/{id}/expenses` | `200` | List all expenses for an event. |
+| `PUT` | `/api/expenses/{id}` | `200` | Update an existing expense. Category must match the same event; `event_id` is immutable. |
+| `DELETE`| `/api/expenses/{id}` | `204` | Delete an expense. |
+
+### 4. Tasks API (Day 2)
+| Method | Endpoint | Status | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/events/{id}/tasks` | `201` | Create a new task for an event. Flagged with `is_overdue`, `is_upcoming`, and `after_event_date`. |
+| `GET` | `/api/events/{id}/tasks` | `200` | List tasks for an event. Optional `?status=` filter (`Pending`, `In Progress`, `Completed`). |
+| `PUT` | `/api/tasks/{id}` | `200` | Update task title, status, priority, due date, or description. |
+| `DELETE`| `/api/tasks/{id}` | `204` | Delete a task. |
+
+---
+
+## Money & Financial Number Rules
+
+- **Minor Units Internally**: All monetary values are converted to and stored as integer minor units (e.g. `$1,250.00` = `125000` cents, `¥5,000` = `5000` yen).
+- **Decimal Representation**: The API accepts numbers or decimal strings (`"1250.00"`) and returns strings with exact decimal formatting.
+- **Validation**:
+  - Values with more decimal places than the currency exponent allows are rejected with `HTTP 422`.
+  - Negative values are rejected with `HTTP 422`.
+  - Values exceeding $100 Billion ($10^{11}$) are rejected with `HTTP 422`.
 
 ---
 
 ## Exact Windows PowerShell Setup & Run Commands
 
-All commands below are strictly Windows PowerShell compatible.
+All commands below are compatible with Windows PowerShell.
 
 ### 1. Backend Setup & Run
 
@@ -140,25 +165,22 @@ Open a PowerShell terminal in the repository root (`EventMate AI`):
 # Navigate to backend directory
 cd backend
 
-# If script execution is restricted on your system:
+# If script execution is restricted on your machine:
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
-# Create virtual environment
+# Create virtual environment (if not already created)
 python -m venv .venv
 
 # Activate virtual environment
 .\.venv\Scripts\Activate.ps1
 
-# Install pinned dependencies
+# Install requirements (FastAPI, SQLAlchemy, google-genai, etc.)
 pip install -r requirements.txt
 
-# Create .env from template
-Copy-Item .env.example .env
-
-# Run FastAPI backend server
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+# Run FastAPI backend server (database auto-initializes)
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
-Backend will be live at: **`http://127.0.0.1:8000`** (Swagger docs at `/docs`, health check at `/health`).
+Backend is available at: **`http://127.0.0.1:8000`** (Swagger docs at `/docs`, health check at `/health`).
 
 ---
 
@@ -170,45 +192,34 @@ Open a separate PowerShell terminal in the repository root (`EventMate AI`):
 # Navigate to frontend directory
 cd frontend
 
-# Install node dependencies
+# Install dependencies (React 19, react-router-dom, Vite, Lucide, Recharts)
 npm.cmd install
-
-# Create .env from template
-Copy-Item .env.example .env
 
 # Start Vite development server
 npm.cmd run dev
 ```
-Frontend will be live at: **`http://127.0.0.1:5173`**.
+Frontend is available at: **`http://localhost:5173`**.
 
 ---
 
-### 3. Running Automated Tests & Verification
+### 3. Automated Tests & Verification
 
 From the repository root (`EventMate AI`):
 
 ```powershell
-# Run the complete Pytest suite (37 tests across health, schemas, math, timeline, AI, API)
+# Run the complete Pytest suite (55 tests: Day 1 AI/budget + Day 2 persistence/math/CORS)
 .\backend\.venv\Scripts\pytest -v backend\tests
 
-# Run frontend build verification
+# Run the 14-step End-to-End API lifecycle verification script
+powershell -NoProfile -ExecutionPolicy Bypass -File backend\verify_e2e.ps1
+
+# Run the database persistence verification script (verifies data survives server restart)
+powershell -NoProfile -ExecutionPolicy Bypass -File backend\verify_persistence.ps1
+
+# Run frontend production build
 cd frontend
 npm.cmd run build
 
 # Run frontend linter
 npm.cmd run lint
 ```
-
----
-
-## Demo Mode vs. Live Gemini AI
-
-- **Demo Mode (Default)**: Out-of-the-box, no external API key is needed. When `GEMINI_API_KEY` is not provided in `backend/.env`, EventMate AI uses a deterministic generation engine to create realistic, production-grade celebration plans for Weddings, Birthdays, and Community Events.
-- **Enabling Live Gemini AI**:
-  1. Obtain a Gemini API key from Google AI Studio.
-  2. In `backend/.env`, set:
-     ```env
-     GEMINI_API_KEY=your_actual_gemini_api_key_here
-     GEMINI_MODEL=gemini-2.5-flash
-     ```
-  3. Restart the backend service. The frontend Navbar and plan badge will dynamically switch to display **`Gemini Live (gemini-2.5-flash)`**.
