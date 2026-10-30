@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 import logging
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -7,9 +8,11 @@ from fastapi.responses import JSONResponse
 try:
     from app.api.routes import router as api_router
     from app.config import settings
+    from app.db.database import init_db
 except ImportError:
     from backend.app.api.routes import router as api_router
     from backend.app.config import settings
+    from backend.app.db.database import init_db
 
 
 # Configure logging
@@ -19,19 +22,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger("eventmate.backend")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Idempotent database initialization
+    logger.info("Initializing database tables...")
+    init_db()
+    logger.info("Database initialized.")
+    yield
+
+
 app = FastAPI(
     title="EventMate AI API",
     description="GenAI Celebration & Event Planner Backend",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
-# CORS Middleware
+# CORS Middleware with explicit PUT and DELETE support
 origins = settings.allowed_origins_list
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
 )
 
@@ -58,6 +72,14 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail}
+    )
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": str(exc)}
     )
 
 
