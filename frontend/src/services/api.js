@@ -4,38 +4,40 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000
  * Normalizes HTTP and network error responses into user-friendly error messages.
  */
 function normalizeError(status, data, defaultMsg = 'An error occurred') {
+  let err;
   if (status === 404) {
-    return new Error(data?.detail || 'The requested resource was not found.');
-  }
-
-  if (status === 422) {
+    err = new Error(data?.detail || 'The requested resource was not found.');
+  } else if (status === 409) {
+    err = new Error(data?.detail || 'Conflict error: resource state has changed.');
+    err.reason = data?.detail || 'Conflict';
+  } else if (status === 422) {
     if (data?.errors && Array.isArray(data.errors)) {
       const fieldMsgs = data.errors.map(e => `${e.field}: ${e.message}`).join(', ');
-      return new Error(`Validation Error: ${fieldMsgs}`);
-    }
-    if (data?.detail && Array.isArray(data.detail)) {
+      err = new Error(`Validation Error: ${fieldMsgs}`);
+    } else if (data?.detail && Array.isArray(data.detail)) {
       const fieldMsgs = data.detail.map(d => {
         const loc = Array.isArray(d.loc) ? d.loc.slice(1).join('.') : 'Field';
         return `${loc || 'field'}: ${d.msg}`;
       }).join(', ');
-      return new Error(`Validation Error: ${fieldMsgs}`);
+      err = new Error(`Validation Error: ${fieldMsgs}`);
+    } else {
+      err = new Error(data?.detail || 'Invalid parameters submitted.');
     }
-    return new Error(data?.detail || 'Invalid parameters submitted.');
+  } else if (status === 429) {
+    err = new Error(data?.detail || 'Request quota limit reached. Please wait a moment and try again.');
+  } else if (status === 502) {
+    err = new Error(data?.detail || 'Upstream service error. Please try again.');
+  } else if (status === 503) {
+    err = new Error(data?.detail || 'Service currently unavailable. Please try again later.');
+  } else if (status === 504) {
+    err = new Error('Request timed out. Please try again.');
+  } else {
+    err = new Error(data?.detail || `${defaultMsg} (${status}).`);
   }
 
-  if (status === 429) {
-    return new Error(data?.detail || 'Request quota limit reached. Please wait a moment and try again.');
-  }
-
-  if (status === 502) {
-    return new Error(data?.detail || 'Upstream service error. Please try again.');
-  }
-
-  if (status === 504) {
-    return new Error('Request timed out. Please try again.');
-  }
-
-  return new Error(data?.detail || `${defaultMsg} (${status}).`);
+  err.status = status;
+  err.data = data;
+  return err;
 }
 
 /**
@@ -205,3 +207,97 @@ export async function deleteTask(taskId) {
     method: 'DELETE',
   });
 }
+
+// ==========================================
+// Day 3 Assistant & Plan Modification APIs
+// ==========================================
+
+export async function askAssistant(eventId, payload, timeoutMs = 60000) {
+  return await apiRequest(`/api/events/${encodeURIComponent(eventId)}/assistant`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, timeoutMs);
+}
+
+export async function proposeChanges(eventId, payload, timeoutMs = 60000) {
+  return await apiRequest(`/api/events/${encodeURIComponent(eventId)}/assistant/propose-changes`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, timeoutMs);
+}
+
+export async function applyChanges(eventId, payload, timeoutMs = 25000) {
+  return await apiRequest(`/api/events/${encodeURIComponent(eventId)}/assistant/apply-changes`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, timeoutMs);
+}
+
+export async function discardProposal(eventId, proposalId, timeoutMs = 15000) {
+  return await apiRequest(`/api/events/${encodeURIComponent(eventId)}/assistant/proposals/${encodeURIComponent(proposalId)}/discard`, {
+    method: 'POST',
+  }, timeoutMs);
+}
+
+// ==========================================
+// Day 3 Theme & Creative Recommendation APIs
+// ==========================================
+
+export async function recommendThemes(payload, timeoutMs = 60000) {
+  return await apiRequest('/api/themes/recommend', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, timeoutMs);
+}
+
+// ==========================================
+// Day 3 Invitation Generator APIs
+// ==========================================
+
+export async function generateInvitation(payload, timeoutMs = 60000) {
+  return await apiRequest('/api/invitations/generate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, timeoutMs);
+}
+
+// ==========================================
+// Day 3 Vendor Management & Quotation APIs
+// ==========================================
+
+export async function listVendors(eventId, categoryFilter = null, statusFilter = null) {
+  const params = new URLSearchParams();
+  if (categoryFilter) params.append('category', categoryFilter);
+  if (statusFilter) params.append('status', statusFilter);
+  const queryStr = params.toString() ? `?${params.toString()}` : '';
+  return await apiRequest(`/api/events/${encodeURIComponent(eventId)}/vendors${queryStr}`, {
+    method: 'GET',
+  });
+}
+
+export async function createVendor(eventId, payload) {
+  return await apiRequest(`/api/events/${encodeURIComponent(eventId)}/vendors`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateVendor(vendorId, payload) {
+  return await apiRequest(`/api/vendors/${encodeURIComponent(vendorId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteVendor(vendorId) {
+  return await apiRequest(`/api/vendors/${encodeURIComponent(vendorId)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getVendorComparison(eventId) {
+  return await apiRequest(`/api/events/${encodeURIComponent(eventId)}/vendors/comparison`, {
+    method: 'GET',
+  });
+}
+

@@ -19,6 +19,10 @@ import {
   Table as TableIcon,
   BarChart3,
   Cpu,
+  Building2,
+  Bot,
+  Palette,
+  Mail,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -35,6 +39,10 @@ import ExpenseModal from '../components/ExpenseModal';
 import TaskModal from '../components/TaskModal';
 import CreativeSection from '../components/CreativeSection';
 import LogisticsAndRisks from '../components/LogisticsAndRisks';
+import AssistantSection from '../components/AssistantSection';
+import ThemesSection from '../components/ThemesSection';
+import InvitationsSection from '../components/InvitationsSection';
+import VendorsSection from '../components/VendorsSection';
 import {
   getEvent,
   updateEvent,
@@ -352,6 +360,49 @@ export default function EventDetailPage() {
     Estimated: Number(cb.expense_estimated_total) || 0,
   }));
 
+  const tabsList = [
+    { id: 'overview', label: 'Overview & Settings', icon: FileText },
+    {
+      id: 'budget',
+      label: 'Budget & Expenses',
+      icon: PieChart,
+      badge: isOverBudget ? (
+        <span className="h-2 w-2 rounded-full bg-rose-400 animate-pulse" />
+      ) : null,
+    },
+    {
+      id: 'tasks',
+      label: 'Timeline & Tasks',
+      icon: ListTodo,
+      badge: overdueTasks.length > 0 ? (
+        <span className="rounded-full bg-rose-500/20 text-rose-400 px-1.5 py-0.2 text-[10px] font-bold">
+          {overdueTasks.length}
+        </span>
+      ) : null,
+    },
+    { id: 'vendors', label: 'Vendors', icon: Building2 },
+    { id: 'assistant', label: 'AI Assistant', icon: Bot },
+    { id: 'themes', label: 'Themes & Decor', icon: Palette },
+    { id: 'invitations', label: 'Invitations', icon: Mail },
+    { id: 'plan', label: 'AI Master Plan', icon: Sparkles },
+  ];
+
+  const handleTabKeyDown = (e, currentIndex) => {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      const nextIndex = (currentIndex + 1) % tabsList.length;
+      const nextTab = tabsList[nextIndex].id;
+      setActiveTab(nextTab);
+      document.getElementById(`tab-${nextTab}`)?.focus();
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const prevIndex = (currentIndex - 1 + tabsList.length) % tabsList.length;
+      const prevTab = tabsList[prevIndex].id;
+      setActiveTab(prevTab);
+      document.getElementById(`tab-${prevTab}`)?.focus();
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
       {/* Top Banner & Header */}
@@ -404,69 +455,47 @@ export default function EventDetailPage() {
       </div>
 
       {/* Tabs Navigation */}
-      <div className="flex items-center gap-2 border-b border-slate-800 overflow-x-auto pb-px">
-        <button
-          onClick={() => setActiveTab('overview')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition border-b-2 ${
-            activeTab === 'overview'
-              ? 'border-indigo-500 text-white bg-slate-900/60'
-              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
-          }`}
-          id="tab-overview"
-        >
-          <FileText className="h-4 w-4" />
-          <span>Overview & Settings</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('budget')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition border-b-2 ${
-            activeTab === 'budget'
-              ? 'border-indigo-500 text-white bg-slate-900/60'
-              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
-          }`}
-          id="tab-budget"
-        >
-          <PieChart className="h-4 w-4" />
-          <span>Budget & Expenses</span>
-          {isOverBudget && <span className="h-2 w-2 rounded-full bg-rose-400 animate-pulse" />}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('tasks')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition border-b-2 ${
-            activeTab === 'tasks'
-              ? 'border-indigo-500 text-white bg-slate-900/60'
-              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
-          }`}
-          id="tab-tasks"
-        >
-          <ListTodo className="h-4 w-4" />
-          <span>Timeline & Tasks</span>
-          {overdueTasks.length > 0 && (
-            <span className="rounded-full bg-rose-500/20 text-rose-400 px-1.5 py-0.2 text-[10px] font-bold">
-              {overdueTasks.length}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('plan')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition border-b-2 ${
-            activeTab === 'plan'
-              ? 'border-indigo-500 text-white bg-slate-900/60'
-              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
-          }`}
-          id="tab-plan"
-        >
-          <Sparkles className="h-4 w-4" />
-          <span>AI Master Plan</span>
-        </button>
+      <div
+        role="tablist"
+        aria-label="Event management tabs"
+        className="flex items-center gap-2 border-b border-slate-800 overflow-x-auto pb-px"
+      >
+        {tabsList.map((t, idx) => {
+          const Icon = t.icon;
+          const isSelected = activeTab === t.id;
+          return (
+            <button
+              key={t.id}
+              role="tab"
+              id={`tab-${t.id}`}
+              aria-selected={isSelected}
+              aria-controls={`panel-${t.id}`}
+              tabIndex={isSelected ? 0 : -1}
+              onClick={() => setActiveTab(t.id)}
+              onKeyDown={(e) => handleTabKeyDown(e, idx)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition border-b-2 whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                isSelected
+                  ? 'border-indigo-500 text-white bg-slate-900/60'
+                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              <span>{t.label}</span>
+              {t.badge}
+            </button>
+          );
+        })}
       </div>
 
       {/* TAB 1: OVERVIEW & SETTINGS */}
       {activeTab === 'overview' && (
-        <div className="space-y-6">
+        <div
+          role="tabpanel"
+          id="panel-overview"
+          aria-labelledby="tab-overview"
+          tabIndex={0}
+          className="space-y-6 focus:outline-none"
+        >
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl space-y-6">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div>
@@ -665,7 +694,13 @@ export default function EventDetailPage() {
 
       {/* TAB 2: BUDGET & EXPENSES */}
       {activeTab === 'budget' && (
-        <div className="space-y-6">
+        <div
+          role="tabpanel"
+          id="panel-budget"
+          aria-labelledby="tab-budget"
+          tabIndex={0}
+          className="space-y-6 focus:outline-none"
+        >
           {/* Over-Budget Warning Banner */}
           {isOverBudget && (
             <div className="rounded-2xl border border-rose-500/40 bg-rose-950/30 p-4 flex items-start gap-3">
@@ -983,7 +1018,13 @@ export default function EventDetailPage() {
 
       {/* TAB 3: TIMELINE & TASKS */}
       {activeTab === 'tasks' && (
-        <div className="space-y-6">
+        <div
+          role="tabpanel"
+          id="panel-tasks"
+          aria-labelledby="tab-tasks"
+          tabIndex={0}
+          className="space-y-6 focus:outline-none"
+        >
           {/* Progress Bar & Header */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1232,9 +1273,67 @@ export default function EventDetailPage() {
         </div>
       )}
 
-      {/* TAB 4: AI MASTER PLAN */}
+      {/* TAB 4: VENDORS */}
+      {activeTab === 'vendors' && (
+        <div
+          role="tabpanel"
+          id="panel-vendors"
+          aria-labelledby="tab-vendors"
+          tabIndex={0}
+          className="space-y-6 focus:outline-none"
+        >
+          <VendorsSection event={event} onEventUpdated={fetchEventData} />
+        </div>
+      )}
+
+      {/* TAB 5: AI ASSISTANT */}
+      {activeTab === 'assistant' && (
+        <div
+          role="tabpanel"
+          id="panel-assistant"
+          aria-labelledby="tab-assistant"
+          tabIndex={0}
+          className="space-y-6 focus:outline-none"
+        >
+          <AssistantSection event={event} onEventUpdated={fetchEventData} />
+        </div>
+      )}
+
+      {/* TAB 6: THEMES & DECOR */}
+      {activeTab === 'themes' && (
+        <div
+          role="tabpanel"
+          id="panel-themes"
+          aria-labelledby="tab-themes"
+          tabIndex={0}
+          className="space-y-6 focus:outline-none"
+        >
+          <ThemesSection event={event} onEventUpdated={fetchEventData} />
+        </div>
+      )}
+
+      {/* TAB 7: INVITATIONS */}
+      {activeTab === 'invitations' && (
+        <div
+          role="tabpanel"
+          id="panel-invitations"
+          aria-labelledby="tab-invitations"
+          tabIndex={0}
+          className="space-y-6 focus:outline-none"
+        >
+          <InvitationsSection event={event} />
+        </div>
+      )}
+
+      {/* TAB 8: AI MASTER PLAN */}
       {activeTab === 'plan' && (
-        <div className="space-y-8">
+        <div
+          role="tabpanel"
+          id="panel-plan"
+          aria-labelledby="tab-plan"
+          tabIndex={0}
+          className="space-y-8 focus:outline-none"
+        >
           {event.generated_plan ? (
             <div className="space-y-8">
               {/* Plan Header Card */}
