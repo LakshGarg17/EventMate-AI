@@ -10,11 +10,11 @@ from sqlalchemy.orm import sessionmaker
 try:
     from app.db.database import Base, get_db
     from app.main import app
-    from app.services.today import set_frozen_today
+    from app.services.today import set_frozen_now, set_frozen_today
 except ImportError:
     from backend.app.db.database import Base, get_db
     from backend.app.main import app
-    from backend.app.services.today import set_frozen_today
+    from backend.app.services.today import set_frozen_now, set_frozen_today
 
 
 @pytest.fixture
@@ -28,11 +28,12 @@ def temp_db(tmp_path):
     db_url = f"sqlite:///{db_file.as_posix()}"
     engine = create_engine(db_url, connect_args={"check_same_thread": False})
 
-    # Enable FKs explicitly for safety
+    # Enable FKs and busy timeout explicitly for safety
     @event.listens_for(engine, "connect")
     def set_pragma(dbapi_conn, record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
 
     Base.metadata.create_all(bind=engine)
@@ -57,6 +58,7 @@ def temp_db(tmp_path):
     # Teardown
     app.dependency_overrides.pop(get_db, None)
     set_frozen_today(None)
+    set_frozen_now(None)
     engine.dispose()
 
 
@@ -76,3 +78,14 @@ def freeze_today():
 
     yield _freeze
     set_frozen_today(None)
+
+
+@pytest.fixture
+def freeze_now():
+    """Helper fixture to freeze get_now() in tests."""
+    def _freeze(frozen_dt):
+        set_frozen_now(frozen_dt)
+        return frozen_dt
+
+    yield _freeze
+    set_frozen_now(None)
