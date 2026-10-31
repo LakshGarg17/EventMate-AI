@@ -1,9 +1,9 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+import { API_BASE_URL } from './config';
 
 /**
  * Normalizes HTTP and network error responses into user-friendly error messages.
  */
-function normalizeError(status, data, defaultMsg = 'An error occurred') {
+function normalizeError(status, data, responseHeaders = null, defaultMsg = 'An error occurred') {
   let err;
   if (status === 404) {
     err = new Error(data?.detail || 'The requested resource was not found.');
@@ -24,7 +24,8 @@ function normalizeError(status, data, defaultMsg = 'An error occurred') {
       err = new Error(data?.detail || 'Invalid parameters submitted.');
     }
   } else if (status === 429) {
-    err = new Error(data?.detail || 'Request quota limit reached. Please wait a moment and try again.');
+    const retryAfter = responseHeaders?.get?.('retry-after') || data?.retry_after || 60;
+    err = new Error(`Too many AI requests. Try again in ${retryAfter} seconds.`);
   } else if (status === 502) {
     err = new Error(data?.detail || 'Upstream service error. Please try again.');
   } else if (status === 503) {
@@ -41,9 +42,10 @@ function normalizeError(status, data, defaultMsg = 'An error occurred') {
 }
 
 /**
- * Universal request wrapper with AbortController timeout and error normalization.
+ * Universal request wrapper with AbortController timeout, slow-start retry on GET,
+ * and error normalization.
  */
-async function apiRequest(path, options = {}, timeoutMs = 15000) {
+async function apiRequest(path, options = {}, timeoutMs = 15000, isRetry = false) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -51,6 +53,8 @@ async function apiRequest(path, options = {}, timeoutMs = 15000) {
   const defaultHeaders = {
     'Content-Type': 'application/json',
   };
+
+  const method = (options.method || 'GET').toUpperCase();
 
   try {
     const response = await fetch(url, {
@@ -69,11 +73,22 @@ async function apiRequest(path, options = {}, timeoutMs = 15000) {
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-      throw normalizeError(response.status, data);
+      throw normalizeError(response.status, data, response.headers);
     }
 
     return data;
   } catch (error) {
+    // Slow-start retry for GET requests on free hosting (Render/Cold starts)
+    if (method === 'GET' && !isRetry && (error.name === 'AbortError' || error.name === 'TypeError')) {
+      clearTimeout(timeoutId);
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        return await apiRequest(path, options, timeoutMs, true);
+      } catch (retryErr) {
+        throw new Error('The server may be waking up. Please try again in a moment.');
+      }
+    }
+
     if (error.name === 'AbortError') {
       throw new Error(`Request to ${path} timed out after ${timeoutMs / 1000} seconds.`);
     }
@@ -112,7 +127,7 @@ export async function checkHealth(timeoutMs = 5000) {
 /**
  * Calls backend to generate event plan using Gemini AI or demo mode.
  */
-export async function generateEventPlan(payload, timeoutMs = 45000) {
+export async function generateEventPlan(payload, timeoutMs = 65000) {
   return await apiRequest('/api/events/generate', {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -212,14 +227,14 @@ export async function deleteTask(taskId) {
 // Day 3 Assistant & Plan Modification APIs
 // ==========================================
 
-export async function askAssistant(eventId, payload, timeoutMs = 60000) {
+export async function askAssistant(eventId, payload, timeoutMs = 65000) {
   return await apiRequest(`/api/events/${encodeURIComponent(eventId)}/assistant`, {
     method: 'POST',
     body: JSON.stringify(payload),
   }, timeoutMs);
 }
 
-export async function proposeChanges(eventId, payload, timeoutMs = 60000) {
+export async function proposeChanges(eventId, payload, timeoutMs = 65000) {
   return await apiRequest(`/api/events/${encodeURIComponent(eventId)}/assistant/propose-changes`, {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -243,7 +258,7 @@ export async function discardProposal(eventId, proposalId, timeoutMs = 15000) {
 // Day 3 Theme & Creative Recommendation APIs
 // ==========================================
 
-export async function recommendThemes(payload, timeoutMs = 60000) {
+export async function recommendThemes(payload, timeoutMs = 65000) {
   return await apiRequest('/api/themes/recommend', {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -254,7 +269,7 @@ export async function recommendThemes(payload, timeoutMs = 60000) {
 // Day 3 Invitation Generator APIs
 // ==========================================
 
-export async function generateInvitation(payload, timeoutMs = 60000) {
+export async function generateInvitation(payload, timeoutMs = 65000) {
   return await apiRequest('/api/invitations/generate', {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -300,4 +315,3 @@ export async function getVendorComparison(eventId) {
     method: 'GET',
   });
 }
-
