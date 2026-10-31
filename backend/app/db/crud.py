@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 try:
-    from app.db.models import BudgetCategory, Event, Expense, Task
+    from app.db.models import BudgetCategory, Event, Expense, Task, Vendor
     from app.schemas import (
         BudgetCategoryResponse,
         BudgetSummaryResponse,
@@ -17,6 +17,7 @@ try:
         TaskCounts,
         TaskResponse,
         TaskSummaryResponse,
+        VendorResponse,
     )
     from app.services.currency import from_minor
     from app.services.summary import (
@@ -26,7 +27,7 @@ try:
     )
     from app.services.today import get_today
 except ImportError:
-    from backend.app.db.models import BudgetCategory, Event, Expense, Task
+    from backend.app.db.models import BudgetCategory, Event, Expense, Task, Vendor
     from backend.app.schemas import (
         BudgetCategoryResponse,
         BudgetSummaryResponse,
@@ -39,6 +40,7 @@ except ImportError:
         TaskCounts,
         TaskResponse,
         TaskSummaryResponse,
+        VendorResponse,
     )
     from backend.app.services.currency import from_minor
     from backend.app.services.summary import (
@@ -95,6 +97,21 @@ def format_category_response(category: BudgetCategory, currency: str) -> BudgetC
         category_name=category.category_name,
         estimated_amount=from_minor(category.estimated_amount, currency),
         description=category.description,
+    )
+
+
+def format_vendor_response(vendor: Vendor, currency: str) -> VendorResponse:
+    return VendorResponse(
+        id=vendor.id,
+        event_id=vendor.event_id,
+        name=vendor.name,
+        category=vendor.category,
+        contact_info=vendor.contact_info,
+        quoted_amount=from_minor(vendor.quoted_amount, currency) if vendor.quoted_amount is not None else None,
+        notes=vendor.notes,
+        status=vendor.status,
+        created_at=vendor.created_at,
+        updated_at=vendor.updated_at,
     )
 
 
@@ -212,6 +229,7 @@ def get_event_with_relations(db: Session, event_id: str) -> Optional[Event]:
             selectinload(Event.budget_categories),
             selectinload(Event.expenses),
             selectinload(Event.tasks),
+            selectinload(Event.vendors),
         )
         .where(Event.id == event_id)
     )

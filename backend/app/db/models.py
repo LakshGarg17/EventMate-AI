@@ -72,6 +72,18 @@ class Event(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    vendors: Mapped[List["Vendor"]] = relationship(
+        "Vendor",
+        back_populates="event",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    change_proposals: Mapped[List["ChangeProposal"]] = relationship(
+        "ChangeProposal",
+        back_populates="event",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class BudgetCategory(Base):
@@ -162,3 +174,76 @@ class Task(Base):
     )
 
     event: Mapped["Event"] = relationship("Event", back_populates="tasks")
+
+
+class Vendor(Base):
+    __tablename__ = "vendors"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    event_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    category: Mapped[str] = mapped_column(
+        String(50),
+        CheckConstraint(
+            "category IN ('Catering', 'Photography', 'Decoration', 'Venue', 'Entertainment', 'Makeup', 'Transportation', 'Other')",
+            name="chk_vendor_category",
+        ),
+        nullable=False,
+    )
+    contact_info: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    quoted_amount: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # minor units
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        CheckConstraint(
+            "status IN ('Considering', 'Contacted', 'Shortlisted', 'Selected', 'Rejected')",
+            name="chk_vendor_status",
+        ),
+        nullable=False,
+        default="Considering",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=get_utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=get_utc_now,
+        onupdate=get_utc_now,
+        nullable=False,
+    )
+
+    event: Mapped["Event"] = relationship("Event", back_populates="vendors")
+
+
+class ChangeProposal(Base):
+    __tablename__ = "change_proposals"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    event_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        CheckConstraint(
+            "status IN ('pending', 'applied', 'discarded', 'expired')",
+            name="chk_proposal_status",
+        ),
+        nullable=False,
+        default="pending",
+    )
+    user_message: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    changes: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    preview: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    base_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=get_utc_now, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    event: Mapped["Event"] = relationship("Event", back_populates="change_proposals")

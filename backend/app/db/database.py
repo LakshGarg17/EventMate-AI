@@ -20,10 +20,11 @@ engine = create_engine(DATABASE_URL, connect_args=connect_args)
 
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
-    """Enable foreign keys on every SQLite connection."""
+    """Enable foreign keys and busy timeout on every SQLite connection."""
     try:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
     except Exception:
         pass

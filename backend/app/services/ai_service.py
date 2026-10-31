@@ -2,12 +2,15 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import logging
-from typing import Optional
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
 from uuid import uuid4
 
 from fastapi import HTTPException
 from google import genai
 from google.genai import errors, types
+from pydantic import BaseModel
+
+T = TypeVar("T", bound=BaseModel)
 
 try:
     from app.schemas import EventPlanResponse, EventRequest, RawAIPlan, RiskItem
@@ -134,6 +137,154 @@ class AIService:
                 status_code=502,
                 detail=f"AI model produced invalid structured output: {error_msg}"
             )
+
+    def _call_gemini_structured_sync(
+        self,
+        user_prompt: str,
+        response_model: Type[T],
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+    ) -> str:
+        """Synchronous Gemini call for arbitrary structured output schemas."""
+        if not self._client:
+            raise ValueError("Gemini client is not configured")
+
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=response_model,
+            system_instruction=system_prompt if system_prompt else None,
+            temperature=temperature,
+        )
+
+        response = self._client.models.generate_content(
+            model=self.model_name,
+            contents=user_prompt,
+            config=config,
+        )
+
+        if not response or not response.text:
+            raise ValueError("Model returned an empty response or safety block")
+
+        return response.text
+
+    async def _retry_repair_structured(
+        self,
+        user_prompt: str,
+        response_model: Type[T],
+        system_prompt: Optional[str],
+        bad_output: str,
+        error_msg: str,
+    ) -> T:
+        """Attempts a single repair retry for generic structured response schemas."""
+        repair_prompt = (
+            f"{user_prompt}\n\n"
+            f"The previous output failed validation with error: {error_msg}\n"
+            f"Previous output snippet: {bad_output[:500]}\n"
+            f"Please regenerate the exact JSON strictly adhering to the schema."
+        )
+        try:
+            text = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self._call_gemini_structured_sync,
+                    repair_prompt,
+                    response_model,
+                    system_prompt,
+                ),
+                timeout=self.timeout_seconds,
+            )
+            cleaned = clean_json_text(text)
+            return response_model.model_validate_json(cleaned)
+        except Exception as retry_err:
+            logger.error("Structured repair retry failed: %s", retry_err)
+            raise HTTPException(
+                status_code=502,
+                detail=f"AI model produced invalid structured output: {error_msg}",
+            )
+
+    async def generate_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_model: Type[T],
+        temperature: float = 0.7,
+    ) -> Tuple[T, str, Optional[str]]:
+        """
+        Generic structured output generation via Gemini API.
+        Enforces defensive fence stripping, Pydantic validation, one repair retry on invalid JSON,
+        and consistent status code error mapping (504, 429/503, 502, 500).
+        """
+        if not self.is_configured:
+            raise HTTPException(
+                status_code=503,
+                detail="Gemini API is not configured",
+            )
+
+        try:
+            raw_text = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self._call_gemini_structured_sync,
+                    user_prompt,
+                    response_model,
+                    system_prompt,
+                    temperature,
+                ),
+                timeout=self.timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail="Upstream AI request timed out. Please try again.",
+            )
+        except errors.APIError as api_err:
+            err_str = str(api_err).lower()
+            code = getattr(api_err, "code", None)
+            if code == 429 or "resource has been exhausted" in err_str or "quota" in err_str:
+                raise HTTPException(
+                    status_code=429,
+                    detail="AI service rate limit or quota exceeded. Please try again shortly.",
+                )
+            if code in (401, 403) or "api_key" in err_str or "auth" in err_str or "permission" in err_str:
+                raise HTTPException(
+                    status_code=502,
+                    detail="AI service authentication failed. Please verify your GEMINI_API_KEY.",
+                )
+            if "not found" in err_str or "model" in err_str:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Configured Gemini model '{self.model_name}' was not found or is unavailable.",
+                )
+            raise HTTPException(
+                status_code=502,
+                detail=f"Upstream AI service error ({code or 'API'}): {str(api_err)}",
+            )
+        except ValueError as val_err:
+            raise HTTPException(
+                status_code=502,
+                detail=f"AI service returned unusable output: {str(val_err)}",
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("Unexpected error calling Gemini API: %s", exc.__class__.__name__)
+            raise HTTPException(
+                status_code=500,
+                detail="An unexpected error occurred while communicating with the AI service.",
+            )
+
+        cleaned_json = clean_json_text(raw_text)
+        try:
+            validated = response_model.model_validate_json(cleaned_json)
+        except Exception as parse_err:
+            logger.warning("Initial structured AI output parse failed (%s), attempting repair retry...", parse_err)
+            validated = await self._retry_repair_structured(
+                user_prompt,
+                response_model,
+                system_prompt,
+                raw_text,
+                str(parse_err),
+            )
+
+        return validated, "gemini", self.model_name
 
     async def generate_plan(self, request: EventRequest) -> EventPlanResponse:
         """Generates an event plan via Gemini AI or falls back to demo mode."""

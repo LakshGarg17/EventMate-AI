@@ -30,11 +30,35 @@ try:
         TaskCreate,
         TaskResponse,
         TaskUpdate,
+        AssistantRequest,
+        AssistantResponse,
+        ProposeChangesRequest,
+        ProposeChangesResponse,
+        ApplyChangesRequest,
+        ApplyChangesResponse,
+        DiscardProposalResponse,
+        ThemeRecommendationRequest,
+        ThemeRecommendationResponse,
+        VendorCreate,
+        VendorUpdate,
+        VendorResponse,
+        VendorComparisonResponse,
+        VENDOR_CATEGORIES,
+        VENDOR_STATUSES,
+        InvitationRequest,
+        InvitationResponse,
     )
+    from app.db.crud import format_vendor_response
+    from app.db.models import BudgetCategory, Event, Expense, Task, Vendor
     from app.services.ai_service import AIService
+    from app.services.assistant import process_assistant_query
     from app.services.budget import reconcile_budget
     from app.services.currency import to_minor, validate_and_parse_money
-    from app.services.today import get_today
+    from app.services.invitation_service import generate_invitation
+    from app.services.proposals import apply_proposal, discard_proposal, propose_changes
+    from app.services.theme_service import recommend_themes
+    from app.services.vendor_service import compute_vendor_comparison
+    from app.services.today import get_now, get_today
 except ImportError:
     from backend.app.config import settings
     from backend.app.db.crud import (
@@ -42,10 +66,11 @@ except ImportError:
         build_event_summary_response,
         format_expense_response,
         format_task_response,
+        format_vendor_response,
         get_event_with_relations,
     )
     from backend.app.db.database import get_db
-    from backend.app.db.models import BudgetCategory, Event, Expense, Task
+    from backend.app.db.models import BudgetCategory, Event, Expense, Task, Vendor
     from backend.app.schemas import (
         EventCreate,
         EventDetailResponse,
@@ -60,11 +85,33 @@ except ImportError:
         TaskCreate,
         TaskResponse,
         TaskUpdate,
+        AssistantRequest,
+        AssistantResponse,
+        ProposeChangesRequest,
+        ProposeChangesResponse,
+        ApplyChangesRequest,
+        ApplyChangesResponse,
+        DiscardProposalResponse,
+        ThemeRecommendationRequest,
+        ThemeRecommendationResponse,
+        VendorCreate,
+        VendorUpdate,
+        VendorResponse,
+        VendorComparisonResponse,
+        VENDOR_CATEGORIES,
+        VENDOR_STATUSES,
+        InvitationRequest,
+        InvitationResponse,
     )
     from backend.app.services.ai_service import AIService
+    from backend.app.services.assistant import process_assistant_query
     from backend.app.services.budget import reconcile_budget
     from backend.app.services.currency import to_minor, validate_and_parse_money
-    from backend.app.services.today import get_today
+    from backend.app.services.invitation_service import generate_invitation
+    from backend.app.services.proposals import apply_proposal, discard_proposal, propose_changes
+    from backend.app.services.theme_service import recommend_themes
+    from backend.app.services.vendor_service import compute_vendor_comparison
+    from backend.app.services.today import get_now, get_today
 
 logger = logging.getLogger("eventmate.routes")
 router = APIRouter()
@@ -637,3 +684,308 @@ def delete_task(task_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Database error while deleting task.")
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ==========================================
+# Day 3 AI Assistant (Ask Mode)
+# ==========================================
+
+@router.post("/events/{event_id}/assistant", response_model=AssistantResponse, tags=["Assistant"])
+async def ask_assistant(
+    event_id: str,
+    payload: AssistantRequest,
+    db: Session = Depends(get_db),
+    ai_service: AIService = Depends(get_ai_service),
+) -> AssistantResponse:
+    """
+    Context-aware AI assistant endpoint (Ask mode).
+    Answers questions using only current event context, budgets, tasks, and expenses.
+    Does not modify database records.
+    """
+    return await process_assistant_query(event_id, payload, ai_service, db=db)
+
+
+# ==========================================
+# Day 3 Safe Plan Modification (Propose & Apply)
+# ==========================================
+
+@router.post(
+    "/events/{event_id}/assistant/propose-changes",
+    response_model=ProposeChangesResponse,
+    tags=["Assistant Proposals"],
+)
+async def propose_event_changes(
+    event_id: str,
+    payload: ProposeChangesRequest,
+    db: Session = Depends(get_db),
+    ai_service: AIService = Depends(get_ai_service),
+) -> ProposeChangesResponse:
+    """
+    Proposes structured modifications to budget allocations or tasks.
+    Deterministic backend validation previews before/after state.
+    Does not modify event records.
+    """
+    return await propose_changes(event_id, payload.message, ai_service, db=db)
+
+
+@router.post(
+    "/events/{event_id}/assistant/apply-changes",
+    response_model=ApplyChangesResponse,
+    tags=["Assistant Proposals"],
+)
+def apply_event_changes(
+    event_id: str,
+    payload: ApplyChangesRequest,
+    db: Session = Depends(get_db),
+) -> ApplyChangesResponse:
+    """
+    Applies a previously validated and pending proposal in one atomic transaction.
+    Requires confirm: true and matching state fingerprint.
+    """
+    return apply_proposal(event_id, payload.proposal_id, db=db)
+
+
+@router.post(
+    "/events/{event_id}/assistant/proposals/{proposal_id}/discard",
+    response_model=DiscardProposalResponse,
+    tags=["Assistant Proposals"],
+)
+def discard_event_proposal(
+    event_id: str,
+    proposal_id: str,
+    db: Session = Depends(get_db),
+) -> DiscardProposalResponse:
+    """Discards a pending change proposal."""
+    return discard_proposal(event_id, proposal_id, db=db)
+
+
+# ==========================================
+# Day 3 Theme & Decoration Recommendations
+# ==========================================
+
+@router.post(
+    "/themes/recommend",
+    response_model=ThemeRecommendationResponse,
+    tags=["Creative Styling"],
+)
+async def recommend_event_themes(
+    payload: ThemeRecommendationRequest,
+    db: Session = Depends(get_db),
+    ai_service: AIService = Depends(get_ai_service),
+) -> ThemeRecommendationResponse:
+    """
+    Stateless theme and decoration concept recommendation endpoint.
+    Returns 3 to 5 curated theme concepts with hex color swatches and estimated decoration budgets.
+    """
+    return await recommend_themes(payload, ai_service, db=db)
+
+
+# ==========================================
+# Day 3 Vendor Management & Comparison
+# ==========================================
+
+@router.post(
+    "/events/{event_id}/vendors",
+    response_model=VendorResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Vendors"],
+)
+def create_vendor(
+    event_id: str,
+    payload: VendorCreate,
+    db: Session = Depends(get_db),
+) -> VendorResponse:
+    """Creates a new vendor item for an event."""
+    event = db.get(Event, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    quoted_minor = None
+    if payload.quoted_amount is not None:
+        dec = validate_and_parse_money(
+            payload.quoted_amount,
+            currency=event.currency,
+            field_name="quoted_amount",
+        )
+        quoted_minor = to_minor(dec, currency=event.currency)
+
+    now = get_now()
+    vendor = Vendor(
+        event_id=event_id,
+        name=payload.name,
+        category=payload.category,
+        contact_info=payload.contact_info,
+        quoted_amount=quoted_minor,
+        notes=payload.notes,
+        status=payload.status,
+        created_at=now,
+        updated_at=now,
+    )
+
+    try:
+        db.add(vendor)
+        db.commit()
+        db.refresh(vendor)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Failed to create vendor: %s", exc)
+        raise HTTPException(status_code=500, detail="Database error while creating vendor.")
+
+    return format_vendor_response(vendor, event.currency)
+
+
+@router.get(
+    "/events/{event_id}/vendors",
+    response_model=List[VendorResponse],
+    tags=["Vendors"],
+)
+def list_vendors(
+    event_id: str,
+    category_filter: Optional[str] = Query(None, alias="category"),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    db: Session = Depends(get_db),
+) -> List[VendorResponse]:
+    """Lists vendors for an event with optional category and status filters."""
+    event = db.get(Event, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    stmt = select(Vendor).where(Vendor.event_id == event_id)
+
+    if category_filter is not None:
+        if category_filter not in VENDOR_CATEGORIES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid category filter '{category_filter}'. Allowed: {', '.join(VENDOR_CATEGORIES)}",
+            )
+        stmt = stmt.where(Vendor.category == category_filter)
+
+    if status_filter is not None:
+        if status_filter not in VENDOR_STATUSES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid status filter '{status_filter}'. Allowed: {', '.join(VENDOR_STATUSES)}",
+            )
+        stmt = stmt.where(Vendor.status == status_filter)
+
+    stmt = stmt.order_by(Vendor.created_at.asc())
+    vendors = db.scalars(stmt).all()
+    return [format_vendor_response(v, event.currency) for v in vendors]
+
+
+@router.get(
+    "/events/{event_id}/vendors/comparison",
+    response_model=VendorComparisonResponse,
+    tags=["Vendors"],
+)
+def get_vendor_comparison(
+    event_id: str,
+    db: Session = Depends(get_db),
+) -> VendorComparisonResponse:
+    """Computes vendor quotes comparison grouped by category."""
+    event = get_event_with_relations(db, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    return compute_vendor_comparison(event)
+
+
+@router.put(
+    "/vendors/{vendor_id}",
+    response_model=VendorResponse,
+    tags=["Vendors"],
+)
+def update_vendor(
+    vendor_id: str,
+    payload: VendorUpdate,
+    db: Session = Depends(get_db),
+) -> VendorResponse:
+    """Updates an existing vendor in place."""
+    vendor = db.get(Vendor, vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    event = db.get(Event, vendor.event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Associated event not found")
+
+    update_data = payload.model_dump(exclude_unset=True)
+
+    if "name" in update_data:
+        vendor.name = update_data["name"]
+    if "category" in update_data:
+        vendor.category = update_data["category"]
+    if "contact_info" in update_data:
+        vendor.contact_info = update_data["contact_info"]
+    if "notes" in update_data:
+        vendor.notes = update_data["notes"]
+    if "status" in update_data:
+        vendor.status = update_data["status"]
+    if "quoted_amount" in update_data:
+        raw_val = update_data["quoted_amount"]
+        if raw_val is None:
+            vendor.quoted_amount = None
+        else:
+            dec = validate_and_parse_money(
+                raw_val,
+                currency=event.currency,
+                field_name="quoted_amount",
+            )
+            vendor.quoted_amount = to_minor(dec, currency=event.currency)
+
+    vendor.updated_at = get_now()
+
+    try:
+        db.commit()
+        db.refresh(vendor)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Failed to update vendor %s: %s", vendor_id, exc)
+        raise HTTPException(status_code=500, detail="Database error while updating vendor.")
+
+    return format_vendor_response(vendor, event.currency)
+
+
+@router.delete(
+    "/vendors/{vendor_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Vendors"],
+)
+def delete_vendor(
+    vendor_id: str,
+    db: Session = Depends(get_db),
+):
+    """Deletes a vendor."""
+    vendor = db.get(Vendor, vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    try:
+        db.delete(vendor)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Failed to delete vendor %s: %s", vendor_id, exc)
+        raise HTTPException(status_code=500, detail="Database error while deleting vendor.")
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ==========================================
+# Day 3 Invitation Generator
+# ==========================================
+
+@router.post(
+    "/invitations/generate",
+    response_model=InvitationResponse,
+    tags=["Invitations"],
+)
+async def generate_celebration_invitation(
+    payload: InvitationRequest,
+    ai_service: AIService = Depends(get_ai_service),
+) -> InvitationResponse:
+    """
+    Stateless invitation copywriting generator.
+    Produces authentic celebration invitations in English or authentic Devanagari Hindi.
+    """
+    return await generate_invitation(payload, ai_service)
