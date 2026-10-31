@@ -69,5 +69,8 @@ class Settings(BaseSettings):
         else:
             logger.info("AI Rate limit disabled (0)")
 
+        db_dialect = "PostgreSQL" if self.effective_database_url.startswith(("postgres://", "postgresql://", "postgresql+")) else "SQLite"
+        logger.info("Database dialect configured: %s", db_dialect)
+
 
 settings = Settings()
