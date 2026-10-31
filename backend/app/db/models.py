@@ -2,6 +2,7 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     Date,
     DateTime,
@@ -41,7 +42,7 @@ class Event(Base):
     event_date: Mapped[date] = mapped_column(Date, nullable=False)
     location: Mapped[str] = mapped_column(String(200), nullable=False)
     guest_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    total_budget: Mapped[int] = mapped_column(Integer, nullable=False)  # stored in integer minor units
+    total_budget: Mapped[int] = mapped_column(BigInteger, nullable=False)  # stored in integer minor units
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
     preferred_theme: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     additional_preferences: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -100,7 +101,7 @@ class BudgetCategory(Base):
         index=True,
     )
     category_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    estimated_amount: Mapped[int] = mapped_column(Integer, nullable=False)  # minor units
+    estimated_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)  # minor units
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     event: Mapped["Event"] = relationship("Event", back_populates="budget_categories")
@@ -123,8 +124,8 @@ class Expense(Base):
         nullable=True,
     )
     description: Mapped[str] = mapped_column(String(255), nullable=False)
-    estimated_amount: Mapped[int] = mapped_column(Integer, nullable=False)  # minor units
-    actual_amount: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # minor units
+    estimated_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)  # minor units
+    actual_amount: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)  # minor units
     payment_status: Mapped[str] = mapped_column(
         String(20),
         CheckConstraint("payment_status IN ('Pending', 'Partial', 'Paid')", name="chk_expense_payment_status"),
@@ -196,7 +197,7 @@ class Vendor(Base):
         nullable=False,
     )
     contact_info: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    quoted_amount: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # minor units
+    quoted_amount: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)  # minor units
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
         String(20),

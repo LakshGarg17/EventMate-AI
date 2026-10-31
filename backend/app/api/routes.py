@@ -56,6 +56,7 @@ try:
     from app.services.currency import to_minor, validate_and_parse_money
     from app.services.invitation_service import generate_invitation
     from app.services.proposals import apply_proposal, discard_proposal, propose_changes
+    from app.services.rate_limiter import rate_limit_ai_endpoint
     from app.services.theme_service import recommend_themes
     from app.services.vendor_service import compute_vendor_comparison
     from app.services.today import get_now, get_today
@@ -109,6 +110,7 @@ except ImportError:
     from backend.app.services.currency import to_minor, validate_and_parse_money
     from backend.app.services.invitation_service import generate_invitation
     from backend.app.services.proposals import apply_proposal, discard_proposal, propose_changes
+    from backend.app.services.rate_limiter import rate_limit_ai_endpoint
     from backend.app.services.theme_service import recommend_themes
     from backend.app.services.vendor_service import compute_vendor_comparison
     from backend.app.services.today import get_now, get_today
@@ -138,7 +140,27 @@ async def health_check():
     }
 
 
-@router.post("/events/generate", response_model=EventPlanResponse, tags=["Events"])
+@router.get("/health/ready", tags=["System"])
+def readiness_check(db: Session = Depends(get_db)):
+    """Verifies that the database is reachable and ready to serve queries."""
+    try:
+        db.execute(select(1))
+        return {"status": "ok", "database": "ok"}
+    except Exception as exc:
+        logger.error("API readiness check database failure: %s", type(exc).__name__)
+        return Response(
+            content='{"status":"degraded","database":"error"}',
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            media_type="application/json",
+        )
+
+
+@router.post(
+    "/events/generate",
+    response_model=EventPlanResponse,
+    dependencies=[Depends(rate_limit_ai_endpoint)],
+    tags=["Events"],
+)
 async def generate_event_plan(
     request: EventRequest,
     ai_service: AIService = Depends(get_ai_service),
@@ -690,7 +712,12 @@ def delete_task(task_id: str, db: Session = Depends(get_db)):
 # Day 3 AI Assistant (Ask Mode)
 # ==========================================
 
-@router.post("/events/{event_id}/assistant", response_model=AssistantResponse, tags=["Assistant"])
+@router.post(
+    "/events/{event_id}/assistant",
+    response_model=AssistantResponse,
+    dependencies=[Depends(rate_limit_ai_endpoint)],
+    tags=["Assistant"],
+)
 async def ask_assistant(
     event_id: str,
     payload: AssistantRequest,
@@ -712,6 +739,7 @@ async def ask_assistant(
 @router.post(
     "/events/{event_id}/assistant/propose-changes",
     response_model=ProposeChangesResponse,
+    dependencies=[Depends(rate_limit_ai_endpoint)],
     tags=["Assistant Proposals"],
 )
 async def propose_event_changes(
@@ -766,6 +794,7 @@ def discard_event_proposal(
 @router.post(
     "/themes/recommend",
     response_model=ThemeRecommendationResponse,
+    dependencies=[Depends(rate_limit_ai_endpoint)],
     tags=["Creative Styling"],
 )
 async def recommend_event_themes(
@@ -978,6 +1007,7 @@ def delete_vendor(
 @router.post(
     "/invitations/generate",
     response_model=InvitationResponse,
+    dependencies=[Depends(rate_limit_ai_endpoint)],
     tags=["Invitations"],
 )
 async def generate_celebration_invitation(

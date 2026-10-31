@@ -43,7 +43,7 @@ def clean_json_text(text: str) -> str:
 
 
 class AIService:
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.5-flash", timeout_seconds: float = 35.0):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.5-flash", timeout_seconds: float = 25.0):
         self.api_key = api_key.strip() if api_key and api_key.strip() else None
         self.model_name = model_name or "gemini-2.5-flash"
         self.timeout_seconds = timeout_seconds

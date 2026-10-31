@@ -1,23 +1,25 @@
 from contextlib import asynccontextmanager
 import logging
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 try:
     from app.api.routes import router as api_router
     from app.config import settings
-    from app.db.database import init_db
+    from app.db.database import get_db, init_db
 except ImportError:
     from backend.app.api.routes import router as api_router
     from backend.app.config import settings
-    from backend.app.db.database import init_db
+    from backend.app.db.database import get_db, init_db
 
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger("eventmate.backend")
@@ -29,6 +31,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database tables...")
     init_db()
     logger.info("Database initialized.")
+    settings.log_startup_summary()
     yield
 
 
@@ -39,15 +42,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS Middleware with explicit PUT and DELETE support
-origins = settings.allowed_origins_list
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
-    allow_headers=["*"],
-)
+# CORS Middleware with explicit HTTP methods and allow_credentials=False
+cors_kwargs = {
+    "allow_origins": settings.allowed_origins_list,
+    "allow_credentials": False,
+    "allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "allow_headers": ["*"],
+}
+if settings.cors_origin_regex:
+    cors_kwargs["allow_origin_regex"] = settings.cors_origin_regex
+
+app.add_middleware(CORSMiddleware, **cors_kwargs)
 
 
 # Exception Handlers
@@ -69,9 +74,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
+    headers = getattr(exc, "headers", None)
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail}
+        content={"detail": exc.detail},
+        headers=headers,
     )
 
 
@@ -85,14 +92,14 @@ async def value_error_handler(request: Request, exc: ValueError):
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
-    logger.exception("Unhandled server error: %s", exc)
+    logger.exception("Unhandled server error: %s", exc.__class__.__name__)
     return JSONResponse(
         status_code=500,
         content={"detail": "An internal server error occurred. Please try again later."}
     )
 
 
-# Root health check endpoint
+# Root health check endpoint (cheap, unchanged contract)
 @app.get("/health", tags=["System"])
 async def root_health_check():
     return {
@@ -100,6 +107,20 @@ async def root_health_check():
         "ai_configured": settings.is_ai_configured,
         "model": settings.gemini_model if settings.is_ai_configured else "demo"
     }
+
+
+# Production readiness check (verifies database connectivity)
+@app.get("/health/ready", tags=["System"])
+def readiness_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(select(1))
+        return {"status": "ok", "database": "ok"}
+    except Exception as exc:
+        logger.error("Readiness check database failure: %s", type(exc).__name__)
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "database": "error"}
+        )
 
 
 # Include API Router under /api
