@@ -24,3 +24,15 @@ def test_api_health_endpoint():
     data = response.json()
     assert data["status"] == "ok"
     assert "ai_configured" in data
+
+
+def test_health_ready_endpoints():
+    # Root /health/ready
+    res1 = client.get("/health/ready")
+    assert res1.status_code == 200
+    assert res1.json() == {"status": "ok", "database": "ok"}
+
+    # Sub-path /api/health/ready
+    res2 = client.get("/api/health/ready")
+    assert res2.status_code == 200
+    assert res2.json() == {"status": "ok", "database": "ok"}

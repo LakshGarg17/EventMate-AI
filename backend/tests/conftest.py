@@ -10,10 +10,12 @@ from sqlalchemy.orm import sessionmaker
 try:
     from app.db.database import Base, get_db
     from app.main import app
+    from app.services.rate_limiter import ai_rate_limiter
     from app.services.today import set_frozen_now, set_frozen_today
 except ImportError:
     from backend.app.db.database import Base, get_db
     from backend.app.main import app
+    from backend.app.services.rate_limiter import ai_rate_limiter
     from backend.app.services.today import set_frozen_now, set_frozen_today
 
 
@@ -38,6 +40,7 @@ def temp_db(tmp_path):
 
     Base.metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    ai_rate_limiter.reset()
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -59,6 +62,7 @@ def temp_db(tmp_path):
     app.dependency_overrides.pop(get_db, None)
     set_frozen_today(None)
     set_frozen_now(None)
+    ai_rate_limiter.reset()
     engine.dispose()
 
 
