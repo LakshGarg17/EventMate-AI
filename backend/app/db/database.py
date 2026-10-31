@@ -1,6 +1,7 @@
 import os
 import re
 from pathlib import Path
+from typing import Optional
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -29,16 +30,32 @@ def normalize_database_url(url: str) -> str:
 DATABASE_URL = normalize_database_url(RAW_DATABASE_URL)
 is_sqlite = DATABASE_URL.startswith("sqlite")
 
-connect_args = {}
-engine_kwargs = {}
 
-if is_sqlite:
-    connect_args = {"check_same_thread": False}
-else:
-    # Production PostgreSQL resilience
-    engine_kwargs["pool_pre_ping"] = True
+def create_db_engine(url: Optional[str] = None):
+    """
+    Creates a configured SQLAlchemy Engine.
+    For PostgreSQL: configures connection pooling resilience (pre-ping, 300s recycle, 5 pool size, 10 overflow)
+    suitable for serverless, Neon, Render, Supabase, and cloud platforms.
+    For SQLite: disables thread-checking for multi-threaded FastAPI workers.
+    """
+    target_url = normalize_database_url(url) if url else DATABASE_URL
+    connect_args = {}
+    engine_kwargs = {}
 
-engine = create_engine(DATABASE_URL, connect_args=connect_args, **engine_kwargs)
+    if target_url.startswith("sqlite"):
+        connect_args = {"check_same_thread": False}
+    else:
+        # Production PostgreSQL resilience (e.g. Neon, Supabase, Vercel Postgres, Render)
+        engine_kwargs["pool_pre_ping"] = True
+        engine_kwargs["pool_recycle"] = 300
+        engine_kwargs["pool_size"] = 5
+        engine_kwargs["max_overflow"] = 10
+
+    return create_engine(target_url, connect_args=connect_args, **engine_kwargs)
+
+
+engine = create_db_engine()
+
 
 
 @event.listens_for(Engine, "connect")
